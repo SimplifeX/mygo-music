@@ -7,6 +7,7 @@ import (
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
 
+	"mygo-music/internal/music"
 	"mygo-music/internal/player"
 )
 
@@ -22,6 +23,42 @@ type scrubState struct {
 }
 
 func secs(s float64) time.Duration { return time.Duration(s * float64(time.Second)) }
+
+// barSmokeColor is the color of the bar's smoke: the playing cover's own, as
+// Now Playing's is, rather than the theme's red — the bar shows on every page,
+// and the song's color says more there than the same red for all of them.
+//
+// Its hue is the cover's, its depth fixed, so that it reads on the bar whatever
+// the cover: a pale one would otherwise leave no smoke to see. A gray cover
+// stays gray, as its backdrop does.
+func (a *app) barSmokeColor(tr *music.Track, p palette) ui.Color {
+	if tr == nil || tr.Album.ImageURL == "" {
+		return p.accent
+	}
+	// The bar's cover is the one whose color is wanted, and it's already loaded
+	// or loading for the icon beside the words.
+	art := a.art.get(sized(tr.Album.ImageURL, 120), false)
+	if art == nil || art.failed {
+		// Its color comes a moment after the song does. The last one stays
+		// until then, rather than the bar flashing the accent and back.
+		if a.barSmoke.A > 0 {
+			return a.barSmoke
+		}
+		return p.accent
+	}
+	h, s, _ := hsv(float64(art.tint.R)/255, float64(art.tint.G)/255, float64(art.tint.B)/255)
+	depth := 0.8
+	if !p.dark {
+		depth = 0.62
+	}
+	if s < 0.12 {
+		s = 0.06
+	} else {
+		s = min(max(s*1.35, 0.5), 0.85)
+	}
+	a.barSmoke = hsvColor(h, s, depth)
+	return a.barSmoke
+}
 
 // scrubber shows how far the track is, and seeks where it is dragged or
 // clicked: the bar thickens under the pointer, and its knob shows. With a
@@ -441,7 +478,7 @@ func (a *app) playerBar(c *ui.Context) {
 			a.transport(c, p.text, p.muted, p.accent, 18)
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Margin(-4, 0, 0, 0).Children(func() {
 				ui.Text(c, clock(pl.Position())).FontSize(10.5).FontFeatures("tnum").TextColor(p.faint).Width(34).TextAlign(ui.End)
-				a.scrubber(c.Key("bar-scrub"), &a.barScrub, p.press, p.text.Alpha(0.75), 14, p.accent).Grow(1)
+				a.scrubber(c.Key("bar-scrub"), &a.barScrub, p.press, p.text.Alpha(0.75), 14, a.barSmokeColor(tr, p)).Grow(1)
 				ui.Text(c, clock(pl.Duration())).FontSize(10.5).FontFeatures("tnum").TextColor(p.faint).Width(34)
 			})
 		})
